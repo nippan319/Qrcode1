@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>QR Code Generator</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- QR Code Styling Library -->
+    <script src="https://cdn.jsdelivr.net/npm/qr-code-styling@1.6.0-rc.1/lib/qr-code-styling.js"></script>
+
+    <!-- HTML5 QR Code Scanner Library -->
+    <script src="https://unpkg.com/html5-qrcode"></script>
+
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        background: '#000000',
+                        card: '#0a0a0a',
+                        surface: '#141414',
+                        primary: '#5C6AC4', // Restrained Violet/Blue
+                        primaryHover: '#4d59a8',
+                        textMain: '#FFFFFF',
+                        textMuted: '#A1A1AA',
+                        borderSubtle: '#262626',
+                        error: '#EF4444'
+                    },
+                    borderRadius: {
+                        '2xl': '1.25rem',
+                        '3xl': '1.75rem',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        
+        body {
+            background-color: theme('colors.background');
+            color: theme('colors.textMain');
+            font-family: theme('fontFamily.sans');
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* Custom Scrollbar for a premium feel */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: theme('colors.surface'); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: theme('colors.borderSubtle'); }
+
+        /* Smooth state transitions */
+        .btn-press { transition: transform 0.1s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s; }
+        .btn-press:active { transform: scale(0.97); }
+
+        /* Responsive Canvas container */
+        #qr-canvas-container canvas, #qr-canvas-container svg {
+            width: 100% !important;
+            height: auto !important;
+            max-width: 100%;
+            border-radius: 1rem;
+            display: block;
+            margin: 0 auto;
+        }
+
+        /* Hide elements dynamically */
+        .hidden-collapse { display: none !important; }
+
+        /* Scanner Library Cleanup */
+        #reader { border: none !important; width: 100%; height: 100%; }
+        #reader video { border-radius: 1rem; object-fit: cover; width: 100% !important; height: 100% !important; }
+    </style>
+</head>
+<body class="bg-background text-textMain min-h-screen flex flex-col antialiased">
+
+    <!-- Header -->
+    <header class="pt-12 pb-6 px-6 max-w-5xl mx-auto w-full">
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-4xl font-bold tracking-tight mb-1 text-textMain">QR Generator</h1>
+                <p class="text-textMuted text-sm">Create, customize, and export instantly.</p>
+            </div>
+            <div class="w-12 h-12 bg-primary/20 text-primary rounded-full flex items-center justify-center">
+                <i class="ph ph-qr-code text-2xl"></i>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="flex-grow px-6 pb-12 max-w-5xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
+        
+        <!-- Left Column: Inputs & Settings -->
+        <div class="lg:col-span-7 space-y-6">
+            
+            <!-- Mode Selector -->
+            <div class="bg-card rounded-[28px] p-2 flex gap-2 shadow-sm border border-borderSubtle/50">
+                <button id="mode-single-btn" class="flex-1 py-3 px-4 rounded-[20px] font-medium text-sm transition-colors bg-surface text-textMain shadow-sm" onclick="setMode('single')">
+                    Single Link
+                </button>
+                <button id="mode-text-btn" class="flex-1 py-3 px-4 rounded-[20px] font-medium text-sm transition-colors text-textMuted hover:text-textMain" onclick="setMode('text')">
+                    Plain Text
+                </button>
+                <button id="mode-scan-btn" class="flex-1 py-3 px-4 rounded-[20px] font-medium text-sm transition-colors text-textMuted hover:text-textMain" onclick="setMode('scan')">
+                    Scan QR
+                </button>
+            </div>
+
+            <!-- Single Link Input Panel -->
+            <div id="panel-single" class="bg-card rounded-[28px] p-6 shadow-sm border border-borderSubtle">
+                <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <i class="ph ph-link text-primary"></i> Destination URL
+                </h2>
+                <div class="space-y-4">
+                    <div>
+                        <input type="url" id="single-url" placeholder="https://example.com" class="w-full bg-surface text-textMain rounded-2xl p-4 border border-borderSubtle focus:border-primary outline-none transition-colors placeholder-textMuted/50">
+                        <p id="single-url-error" class="text-error text-xs mt-2 ml-2 hidden"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Plain Text Input Panel -->
+            <div id="panel-text" class="bg-card rounded-[28px] p-6 shadow-sm border border-borderSubtle hidden-collapse">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-semibold flex items-center gap-2">
+                        <i class="ph ph-text-aa text-primary"></i> Plain Text
+                    </h2>
+                </div>
+                
+                <p class="text-xs text-textMuted mb-4 leading-relaxed">
+                    Type or paste any amount of text, notes, or messages here. The QR code will directly display this text when scanned on any phone.
+                </p>
+
+                <div class="space-y-4">
+                    <div>
+                        <textarea id="text-content" rows="6" placeholder="Type your text here..." class="w-full bg-surface text-textMain rounded-2xl p-4 border border-borderSubtle focus:border-primary outline-none transition-colors placeholder-textMuted/50 resize-y"></textarea>
+                        <p id="text-error" class="text-error text-xs mt-2 ml-2 hidden"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Scan Panel -->
+            <div id="panel-scan" class="bg-card rounded-[28px] p-6 shadow-sm border border-borderSubtle hidden-collapse">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-semibold flex items-center gap-2">
+                        <i class="ph ph-camera text-primary"></i> Scanner
+                    </h2>
+                </div>
+                
+                <p class="text-xs text-textMuted mb-4 leading-relaxed">
+                    Point your camera at any QR code to instantly read its content, or upload an image from your device.
+                </p>
+
+                <div id="reader-container" class="w-full bg-surface rounded-2xl overflow-hidden border border-borderSubtle mb-6 relative aspect-square flex items-center justify-center max-w-[400px] mx-auto">
+                    <div id="reader"></div>
+                    <div id="reader-placeholder" class="absolute flex flex-col items-center justify-center text-textMuted pointer-events-none">
+                        <i class="ph ph-camera-slash text-4xl mb-2"></i>
+                        <span class="text-xs">Camera Off</span>
+                    </div>
+                </div>
+
+                <div class="flex gap-3 max-w-[400px] mx-auto">
+                    <button id="btn-start-scan" onclick="startScanner()" class="flex-1 bg-primary hover:bg-primaryHover text-white rounded-[16px] py-3 font-semibold transition-colors flex justify-center items-center gap-2 btn-press">
+                        <i class="ph ph-video-camera"></i> Start Camera
+                    </button>
+                    <button id="btn-stop-scan" onclick="stopScanner()" class="flex-1 bg-surface hover:bg-borderSubtle text-error border border-borderSubtle/50 rounded-[16px] py-3 font-semibold transition-colors flex justify-center items-center gap-2 btn-press hidden-collapse">
+                        <i class="ph ph-stop-circle"></i> Stop
+                    </button>
+                </div>
+                
+                <div class="mt-6 text-center">
+                    <label class="inline-flex items-center text-sm font-medium text-textMuted hover:text-textMain cursor-pointer transition-colors px-4 py-2 rounded-full bg-surface border border-borderSubtle">
+                        <input type="file" id="qr-upload" accept="image/*" class="hidden" onchange="handleImageScan(event)">
+                        <i class="ph ph-image mr-2 text-lg"></i> Scan from Image
+                    </label>
+                </div>
+            </div>
+
+            <!-- Customization Panel (Collapsible) -->
+            <div id="panel-settings" class="bg-card rounded-[28px] shadow-sm border border-borderSubtle/50 overflow-hidden">
+                <button onclick="toggleSettings()" class="w-full p-6 flex justify-between items-center text-left hover:bg-surface/50 transition-colors focus:outline-none">
+                    <h2 class="text-lg font-semibold flex items-center gap-2">
+                        <i class="ph ph-palette text-primary"></i> Appearance & Settings
+                    </h2>
+                    <i class="ph ph-caret-down text-textMuted transition-transform" id="settings-chevron"></i>
+                </button>
+                
+                <div id="settings-content" class="px-6 pb-6 hidden-collapse space-y-5">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm text-textMuted mb-2">Foreground Color</label>
+                            <div class="flex items-center gap-2">
+                                <input type="color" id="color-fg" value="#ffffff" class="w-10 h-10 rounded cursor-pointer bg-transparent border-0 p-0" onchange="triggerPreviewUpdate()">
+                                <span class="text-sm font-mono text-textMuted" id="color-fg-label">#FFFFFF</span>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm text-textMuted mb-2">Background Color</label>
+                            <div class="flex items-center gap-2">
+                                <input type="color" id="color-bg" value="#000000" class="w-10 h-10 rounded cursor-pointer bg-transparent border-0 p-0" onchange="triggerPreviewUpdate()">
+                                <span class="text-sm font-mono text-textMuted" id="color-bg-label">#000000</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm text-textMuted mb-2">Error Correction Level</label>
+                        <select id="setting-ec" class="w-full bg-surface text-textMain rounded-xl p-3 border border-borderSubtle focus:border-primary outline-none appearance-none" onchange="triggerPreviewUpdate()">
+                            <option value="L">Low (7%)</option>
+                            <option value="M" selected>Medium (15%) - Default</option>
+                            <option value="Q">Quartile (25%)</option>
+                            <option value="H">High (30%) - Best for Dense Text</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm text-textMuted mb-2">Dot Style</label>
+                        <select id="setting-dots" class="w-full bg-surface text-textMain rounded-xl p-3 border border-borderSubtle focus:border-primary outline-none appearance-none" onchange="triggerPreviewUpdate()">
+                            <option value="square" selected>Square (Classic)</option>
+                            <option value="dots">Dots</option>
+                            <option value="rounded">Rounded</option>
+                            <option value="extra-rounded">Extra Rounded</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Right Column: Live Preview & Export -->
+        <div class="lg:col-span-5 relative">
+            <!-- Sticky container for desktop -->
+            <div class="sticky top-6 space-y-6">
+                
+                <!-- Generator View -->
+                <div id="generator-preview-section">
+                    <div class="bg-card rounded-[32px] p-8 shadow-lg border border-borderSubtle/50 flex flex-col items-center">
+                        <h3 class="text-sm font-medium text-textMuted mb-6 uppercase tracking-wider">Live Preview</h3>
+                        
+                        <!-- QR Canvas Container -->
+                        <div id="qr-canvas-container" class="bg-surface p-4 rounded-[24px] shadow-inner w-full max-w-[280px] aspect-square flex items-center justify-center relative">
+                            <!-- Canvas injected by library -->
+                            <div id="qr-placeholder" class="text-textMuted flex flex-col items-center text-center absolute">
+                                <i class="ph ph-qr-code text-5xl mb-2"></i>
+                                <span class="text-xs font-medium">Enter Data<br>to generate</span>
+                            </div>
+                        </div>
+
+                        <div class="w-full mt-8 space-y-3">
+                            <button onclick="handleGenerate()" class="w-full bg-primary hover:bg-primaryHover text-white rounded-[20px] p-4 font-semibold transition-colors flex items-center justify-center gap-2 btn-press shadow-lg shadow-primary/20">
+                                <i class="ph ph-magic-wand"></i> Generate QR Code
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="bg-card rounded-[28px] p-6 shadow-sm border border-borderSubtle/50 mt-6">
+                        <h3 class="text-sm font-medium text-textMuted mb-4">Export High-Res Image</h3>
+                        <div class="grid grid-cols-2 gap-3">
+                            <button onclick="downloadQR('png')" class="bg-surface hover:bg-borderSubtle text-textMain rounded-[16px] py-3 px-2 font-medium transition-colors flex flex-col items-center justify-center gap-1 btn-press border border-borderSubtle/50">
+                                <i class="ph ph-file-png text-xl"></i> PNG
+                            </button>
+                            <button onclick="downloadQR('jpeg')" class="bg-surface hover:bg-borderSubtle text-textMain rounded-[16px] py-3 px-2 font-medium transition-colors flex flex-col items-center justify-center gap-1 btn-press border border-borderSubtle/50">
+                                <i class="ph ph-file-jpg text-xl"></i> JPEG
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Scanner View -->
+                <div id="scanner-result-section" class="hidden-collapse">
+                    <div class="bg-card rounded-[32px] p-8 shadow-lg border border-borderSubtle/50 flex flex-col items-center">
+                        <h3 class="text-sm font-medium text-textMuted mb-6 uppercase tracking-wider">Scan Result</h3>
+                        
+                        <div class="w-full bg-surface p-6 rounded-[24px] shadow-inner border border-borderSubtle/50 min-h-[250px] flex flex-col items-center justify-center relative">
+                            <div id="scan-placeholder" class="text-textMuted flex flex-col items-center text-center">
+                                <i class="ph ph-scan text-5xl mb-2"></i>
+                                <span class="text-xs font-medium">Waiting for<br>QR Code</span>
+                            </div>
+                            <div id="scan-output-content" class="w-full h-full hidden flex flex-col justify-center">
+                                <p id="scan-text-display" class="text-sm text-textMain break-all whitespace-pre-wrap max-h-[300px] overflow-y-auto custom-scrollbar text-center"></p>
+                            </div>
+                        </div>
+
+                        <div id="scan-actions" class="w-full mt-8 grid grid-cols-2 gap-3 hidden">
+                            <button onclick="copyScanResult()" class="bg-surface hover:bg-borderSubtle text-textMain rounded-[16px] py-3 font-medium transition-colors flex items-center justify-center gap-2 btn-press border border-borderSubtle/50">
+                                <i class="ph ph-copy text-lg"></i> Copy
+                            </button>
+                            <button id="btn-open-link" onclick="openScanLink()" class="bg-primary hover:bg-primaryHover text-white rounded-[16px] py-3 font-medium transition-colors flex items-center justify-center gap-2 btn-press shadow-lg shadow-primary/20 hidden-collapse">
+                                <i class="ph ph-arrow-square-out text-lg"></i> Open Link
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- Custom Toast Container -->
+    <div id="toast-container" class="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <script>
+        /**
+         * State & Configurations
+         */
+        const state = {
+            mode: 'single', // 'single', 'text', or 'scan'
+            qrCodeInstance: null,
+            isGenerated: false,
+            scanner: null,
+            isScanning: false,
+            lastScannedText: ''
+        };
+
+        const DEBOUNCE_DELAY = 500;
+        let debounceTimer;
+
+        // Initialize UI
+        document.addEventListener('DOMContentLoaded', () => {
+            setupColorSync();
+            setupInputListeners();
+        });
+
+        /**
+         * UI Toggles & Interactions
+         */
+        function setMode(mode) {
+            state.mode = mode;
+            const singleBtn = document.getElementById('mode-single-btn');
+            const textBtn = document.getElementById('mode-text-btn');
+            const scanBtn = document.getElementById('mode-scan-btn');
+            const panelSingle = document.getElementById('panel-single');
+            const panelText = document.getElementById('panel-text');
+            const panelScan = document.getElementById('panel-scan');
+            const panelSettings = document.getElementById('panel-settings');
+            
+            const generatorPreview = document.getElementById('generator-preview-section');
+            const scannerResult = document.getElementById('scanner-result-section');
+
+            // Reset styles
+            [singleBtn, textBtn, scanBtn].forEach(btn => {
+                btn.className = "flex-1 py-3 px-4 rounded-[20px] font-medium text-sm transition-colors text-textMuted hover:text-textMain";
+            });
+
+            // Stop scanner if leaving scan mode
+            if (mode !== 'scan' && state.isScanning) {
+                stopScanner();
+            }
+
+            if (mode === 'single') {
+                singleBtn.classList.add('bg-surface', 'text-textMain', 'shadow-sm');
+                singleBtn.classList.remove('text-textMuted', 'hover:text-textMain');
+                
+                panelSingle.classList.remove('hidden-collapse');
+                panelText.classList.add('hidden-collapse');
+                panelScan.classList.add('hidden-collapse');
+                panelSettings.classList.remove('hidden-collapse');
+                
+                generatorPreview.classList.remove('hidden-collapse');
+                scannerResult.classList.add('hidden-collapse');
+                triggerPreviewUpdate();
+                
+            } else if (mode === 'text') {
+                textBtn.classList.add('bg-surface', 'text-textMain', 'shadow-sm');
+                textBtn.classList.remove('text-textMuted', 'hover:text-textMain');
+                
+                panelText.classList.remove('hidden-collapse');
+                panelSingle.classList.add('hidden-collapse');
+                panelScan.classList.add('hidden-collapse');
+                panelSettings.classList.remove('hidden-collapse');
+                
+                generatorPreview.classList.remove('hidden-collapse');
+                scannerResult.classList.add('hidden-collapse');
+                triggerPreviewUpdate();
+                
+            } else if (mode === 'scan') {
+                scanBtn.classList.add('bg-surface', 'text-textMain', 'shadow-sm');
+                scanBtn.classList.remove('text-textMuted', 'hover:text-textMain');
+                
+                panelScan.classList.remove('hidden-collapse');
+                panelSingle.classList.add('hidden-collapse');
+                panelText.classList.add('hidden-collapse');
+                panelSettings.classList.add('hidden-collapse'); // Hide settings in scan mode
+                
+                scannerResult.classList.remove('hidden-collapse');
+                generatorPreview.classList.add('hidden-collapse');
+            }
+        }
+
+        function toggleSettings() {
+            const content = document.getElementById('settings-content');
+            const chevron = document.getElementById('settings-chevron');
+            if (content.classList.contains('hidden-collapse')) {
+                content.classList.remove('hidden-collapse');
+                chevron.style.transform = 'rotate(180deg)';
+            } else {
+                content.classList.add('hidden-collapse');
+                chevron.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        function setupColorSync() {
+            const colorFg = document.getElementById('color-fg');
+            const colorFgLabel = document.getElementById('color-fg-label');
+            const colorBg = document.getElementById('color-bg');
+            const colorBgLabel = document.getElementById('color-bg-label');
+
+            colorFg.addEventListener('input', (e) => {
+                colorFgLabel.textContent = e.target.value.toUpperCase();
+            });
+            colorBg.addEventListener('input', (e) => {
+                colorBgLabel.textContent = e.target.value.toUpperCase();
+            });
+        }
+
+        function setupInputListeners() {
+            // URL Input Setup
+            const urlInput = document.getElementById('single-url');
+            urlInput.addEventListener('input', () => {
+                clearErrors();
+                triggerPreviewUpdate();
+            });
+            urlInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleGenerate();
+                }
+            });
+
+            // Text Input Setup (No enter key blocking so users can add newlines)
+            const textInput = document.getElementById('text-content');
+            textInput.addEventListener('input', () => {
+                clearErrors();
+                triggerPreviewUpdate();
+            });
+        }
+
+        /**
+         * Validation & Processing
+         */
+        function isValidURL(string) {
+            try {
+                const url = new URL(string);
+                return url.protocol === "http:" || url.protocol === "https:";
+            } catch (_) {
+                return false;  
+            }
+        }
+
+        function clearErrors() {
+            document.getElementById('single-url-error').classList.add('hidden');
+            document.getElementById('text-error').classList.add('hidden');
+        }
+
+        function validateAndGetPayload() {
+            clearErrors();
+            let payload = "";
+
+            if (state.mode === 'single') {
+                payload = document.getElementById('single-url').value.trim();
+                if (!payload) {
+                    throw {field: 'single-url-error', msg: "Please enter a destination URL."};
+                }
+                if (payload.startsWith('file://')) {
+                    throw {field: 'single-url-error', msg: "Local file paths cannot be scanned by others. Use a hosted link."};
+                }
+                if (!isValidURL(payload)) {
+                    throw {field: 'single-url-error', msg: "Please enter a valid HTTP/HTTPS URL."};
+                }
+            } else if (state.mode === 'text') {
+                const rawText = document.getElementById('text-content').value;
+                if (!rawText.trim()) {
+                    throw {field: 'text-error', msg: "Please enter some text to generate a QR code."};
+                }
+                
+                // By adding newlines at the end, we force smartphone scanners (like Google Lens) 
+                // to treat this strictly as a "Text Document" to read/copy, rather than a "Web Search".
+                payload = rawText.trim() + "\n\n";
+                
+                if (payload.length > 2000) {
+                    showToast("Warning: Extremely long text may result in a dense QR code that is hard to scan.", "error");
+                }
+            }
+            return payload;
+        }
+
+        function getRenderOptions(payload) {
+            const fgColor = document.getElementById('color-fg').value;
+            const bgColor = document.getElementById('color-bg').value;
+            const ecLevel = document.getElementById('setting-ec').value;
+            const dotType = document.getElementById('setting-dots').value;
+
+            // Simple contrast warning (naive check, doesn't prevent generation)
+            if (fgColor === bgColor || (fgColor === '#ffffff' && bgColor === '#ffffff')) {
+                showToast("Warning: Low contrast between colors may make the QR unreadable.", "error");
+            }
+            
+            // Adjust corners to match dot type for a cohesive look
+            let cornersSquareType = "square";
+            let cornersDotType = "square";
+            if (dotType === "rounded" || dotType === "extra-rounded") {
+                cornersSquareType = "extra-rounded";
+                cornersDotType = "dot";
+            } else if (dotType === "dots") {
+                cornersSquareType = "dot";
+                cornersDotType = "dot";
+            }
+
+            const options = {
+                data: payload,
+                qrOptions: {
+                    errorCorrectionLevel: ecLevel
+                },
+                dotsOptions: {
+                    color: fgColor,
+                    type: dotType
+                },
+                cornersSquareOptions: {
+                    color: fgColor,
+                    type: cornersSquareType
+                },
+                cornersDotOptions: {
+                    color: fgColor,
+                    type: cornersDotType
+                },
+                backgroundOptions: {
+                    color: bgColor
+                }
+            };
+
+            return options;
+        }
+
+        // Render Queue State Machine to prevent overlapping crashes
+        let isRendering = false;
+        let needsRender = false;
+        let pendingPayload = null;
+
+        async function processRenderQueue() {
+            if (isRendering || !needsRender) return;
+            isRendering = true;
+            needsRender = false;
+            
+            const payloadToRender = pendingPayload;
+            
+            try {
+                await renderQR(payloadToRender);
+            } catch(e) {
+                // Silent catch for auto-renders, error UI is handled in renderQR
+            } finally {
+                isRendering = false;
+                if (needsRender) {
+                    processRenderQueue();
+                }
+            }
+        }
+
+        function triggerPreviewUpdate() {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                const payload = getPayloadSilent();
+                if (payload) {
+                    pendingPayload = payload;
+                    needsRender = true;
+                    processRenderQueue();
+                }
+            }, DEBOUNCE_DELAY);
+        }
+
+        function getPayloadSilent() {
+            if (state.mode === 'single') {
+                const payload = document.getElementById('single-url').value.trim();
+                if (payload && isValidURL(payload) && !payload.startsWith('file://')) return payload;
+            } else if (state.mode === 'text') {
+                const rawText = document.getElementById('text-content').value;
+                if (rawText.trim()) {
+                    // Append newlines to prevent auto-search on mobile scanners
+                    return rawText.trim() + "\n\n";
+                }
+            }
+            return null;
+        }
+
+        async function handleGenerate() {
+            try {
+                const payload = validateAndGetPayload();
+                
+                if (isRendering) {
+                    // If it is currently typing/rendering, queue it instead of crashing
+                    pendingPayload = payload;
+                    needsRender = true;
+                    showToast("Generating...", "info");
+                    return;
+                }
+                
+                await renderQR(payload);
+                showToast("QR Code successfully generated!", "success");
+            } catch (err) {
+                if (err && err.field) {
+                    const errEl = document.getElementById(err.field);
+                    errEl.textContent = err.msg;
+                    errEl.classList.remove('hidden');
+                } else {
+                    showToast(err.message || "Failed to generate QR code", "error");
+                }
+            }
+        }
+
+        async function renderQR(payload) {
+            const options = getRenderOptions(payload);
+            
+            // Ensure high-resolution dimensions are always set for crisp downloads
+            options.width = 1024;
+            options.height = 1024;
+            options.margin = 10;
+            
+            const container = document.getElementById('qr-canvas-container');
+            const placeholder = document.getElementById('qr-placeholder');
+            
+            placeholder.classList.add('hidden');
+            
+            try {
+                // Safely clear any existing canvas/svg to prevent overlapping or stale renders
+                Array.from(container.children).forEach(child => {
+                    if (child.id !== 'qr-placeholder') {
+                        child.remove();
+                    }
+                });
+                
+                // Always create a fresh instance for 100% accuracy in payload and styles
+                state.qrCodeInstance = new QRCodeStyling(options);
+                
+                await state.qrCodeInstance.append(container);
+                
+                state.isGenerated = true;
+            } catch (e) {
+                console.error("Render failed:", e);
+                // Clean up any broken fragments if generation fails mid-way
+                Array.from(container.children).forEach(child => {
+                    if (child.id !== 'qr-placeholder') child.remove();
+                });
+                placeholder.classList.remove('hidden');
+                placeholder.innerHTML = `<i class="ph ph-warning-circle text-error text-4xl mb-2"></i><span class="text-xs text-error text-center mt-2">Data too large or<br>generation failed</span>`;
+                state.isGenerated = false;
+                throw new Error("QR Generation failed. Try reducing data length.");
+            }
+        }
+
+        /**
+         * Export functionality
+         */
+        async function downloadQR(format) {
+            if (!state.isGenerated) {
+                showToast("Please generate a valid QR code first.", "error");
+                return;
+            }
+            
+            try {
+                const fileName = `my-qr-code-${Date.now()}.${format}`;
+                // Fetch the raw blob data to securely force the download
+                const blob = await state.qrCodeInstance.getRawData(format);
+                
+                if (!blob) throw new Error("Could not generate image data");
+                
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                showToast(`Downloaded ${format.toUpperCase()} successfully!`, "success");
+            } catch (err) {
+                console.error("Export error:", err);
+                showToast("Download failed. Try regenerating the QR code.", "error");
+            }
+        }
+
+        /**
+         * Scanner Functionality
+         */
+        function initScanner() {
+            if (!state.scanner) {
+                state.scanner = new Html5Qrcode("reader");
+            }
+        }
+
+        async function startScanner() {
+            initScanner();
+            const btnStart = document.getElementById('btn-start-scan');
+            const btnStop = document.getElementById('btn-stop-scan');
+            const placeholder = document.getElementById('reader-placeholder');
+            
+            try {
+                placeholder.classList.add('hidden');
+                
+                await state.scanner.start(
+                    { facingMode: "environment" }, 
+                    {
+                        fps: 10,
+                        qrbox: { width: 250, height: 250 },
+                        aspectRatio: 1.0
+                    },
+                    onScanSuccess,
+                    (errorMessage) => {
+                        // ignore background scanning errors while it looks for a code
+                    }
+                );
+                
+                state.isScanning = true;
+                btnStart.classList.add('hidden-collapse');
+                btnStop.classList.remove('hidden-collapse');
+                showToast("Camera started. Point at a QR Code.", "info");
+
+            } catch (err) {
+                console.error(err);
+                placeholder.classList.remove('hidden');
+                showToast("Camera access denied or unavailable.", "error");
+            }
+        }
+
+        async function stopScanner() {
+            if (state.scanner && state.isScanning) {
+                try {
+                    await state.scanner.stop();
+                    state.isScanning = false;
+                    
+                    document.getElementById('btn-start-scan').classList.remove('hidden-collapse');
+                    document.getElementById('btn-stop-scan').classList.add('hidden-collapse');
+                    document.getElementById('reader-placeholder').classList.remove('hidden');
+                    
+                } catch (err) {
+                    console.error("Failed to stop scanner", err);
+                }
+            }
+        }
+
+        function onScanSuccess(decodedText, decodedResult) {
+            state.lastScannedText = decodedText;
+            
+            // Lock onto result
+            if (state.isScanning) {
+                stopScanner();
+                showToast("QR Code scanned successfully!", "success");
+            }
+
+            displayScanResult(decodedText);
+        }
+
+        async function handleImageScan(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            initScanner();
+            
+            if (state.isScanning) {
+                await stopScanner();
+            }
+
+            try {
+                const decodedText = await state.scanner.scanFileV2(file);
+                showToast("Image scanned successfully!", "success");
+                onScanSuccess(decodedText.decodedText, null);
+            } catch (err) {
+                showToast("No QR code found in the image.", "error");
+            }
+            
+            // Clear input so same file can be selected again
+            event.target.value = '';
+        }
+
+        function displayScanResult(text) {
+            const placeholder = document.getElementById('scan-placeholder');
+            const content = document.getElementById('scan-output-content');
+            const textDisplay = document.getElementById('scan-text-display');
+            const actions = document.getElementById('scan-actions');
+            const openBtn = document.getElementById('btn-open-link');
+
+            placeholder.classList.add('hidden');
+            content.classList.remove('hidden');
+            actions.classList.remove('hidden');
+            
+            // Clean trailing newlines we added previously for generated text
+            const cleanText = text.trim();
+            textDisplay.textContent = cleanText;
+
+            // Check if URL to show "Open Link" button
+            if (isValidURL(cleanText)) {
+                openBtn.classList.remove('hidden-collapse');
+            } else {
+                openBtn.classList.add('hidden-collapse');
+            }
+        }
+
+        function copyScanResult() {
+            if (!state.lastScannedText) return;
+            const textToCopy = state.lastScannedText.trim();
+            
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                showToast("Copied to clipboard!", "success");
+            }).catch(err => {
+                // Fallback
+                const textarea = document.createElement("textarea");
+                textarea.value = textToCopy;
+                document.body.appendChild(textarea);
+                textarea.select();
+                try {
+                    document.execCommand('copy');
+                    showToast("Copied to clipboard!", "success");
+                } catch (e) {
+                    showToast("Failed to copy text.", "error");
+                }
+                document.body.removeChild(textarea);
+            });
+        }
+
+        function openScanLink() {
+            if (!state.lastScannedText) return;
+            const url = state.lastScannedText.trim();
+            if (isValidURL(url)) {
+                window.open(url, '_blank', 'noopener,noreferrer');
+            }
+        }
+
+        /**
+         * Utilities
+         */
+        function escapeHTML(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            const bgClass = type === 'error' ? 'bg-error' : (type === 'success' ? 'bg-emerald-600' : 'bg-primary');
+            const icon = type === 'error' ? 'ph-warning-circle' : (type === 'success' ? 'ph-check-circle' : 'ph-info');
+            
+            toast.className = `${bgClass} text-white px-5 py-3 rounded-full text-sm font-medium shadow-lg flex items-center gap-2 transition-all duration-300 transform translate-y-8 opacity-0 pointer-events-auto`;
+            toast.innerHTML = `<i class="ph ${icon} text-lg"></i> ${escapeHTML(message)}`;
+            
+            container.appendChild(toast);
+            
+            // Animate in
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-8', 'opacity-0');
+            });
+            
+            // Animate out
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-4');
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
+    </script>
+</body>
+</html>
